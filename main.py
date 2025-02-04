@@ -97,7 +97,7 @@ def collate_fn(batch):
     # Convert indices to embeddings using the embedding layer
     padded_queries = embedding_layer(padded_query_indices)  # Shape: [batch_size, max_query_len, 300]
     padded_answers = embedding_layer(padded_answer_indices)  # Shape: [batch_size, max_answer_len, 300]
-    
+
     return {
         'query': padded_queries,
         'answer': padded_answers,
@@ -127,7 +127,7 @@ for batch in dataloader:
 
 
 
-def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_epochs, batch_size):
+def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_epochs, batch_size, hidden_size_query, hidden_size_answer):
     """Train the model"""
     wandb.init(
             project="two-tower-training",
@@ -137,18 +137,19 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
                 "batch_size": batch_size,
                 "learning_rate": learning_rate,
                 "num_epochs": num_epochs,
+                "hidden_size_query": hidden_size_query,
+                "hidden_size_answer": hidden_size_answer,
             },
         )
     
-    hidden_size_query = 6
-    hidden_size_answer = 6
+
 
     model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query, hidden_size_answer).to(device)
     # criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    # scheduler2 = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer2, mode="min", factor=0.5, patience=1
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode="min", factor=0.5, patience=1
     # )
     zero = torch.tensor(0.0).to(device)
     for epoch in range(num_epochs):
@@ -171,14 +172,19 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
             # print(answer_embeddings.shape, answer_embeddings[0], answer_embeddings[1], answer_embeddings[37])
             batch_loss = torch.tensor(0.0).to(device)
             
-            margin = 0.5  # Hyperparameter you can tune
+            margin = 0.1  # Hyperparameter you can tune
             for i in range(batch_size):
                 # Positive pair
                 query_emb = query_embeddings[i]
                 pos_answer_emb = answer_embeddings[i]
                 
                 # Calculate positive similarity
-                pos_similarity = torch.dot(query_emb, pos_answer_emb)
+                pos_similarity = nn.functional.cosine_similarity(
+                    query_emb.unsqueeze(0), 
+                    pos_answer_emb.unsqueeze(0)
+                ).squeeze()
+
+
                 
                 # Randomly select 3 negative indices
                 available_indices = [j for j in range(batch_size) if j != i]
@@ -186,17 +192,24 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
                 neg_idx = available_indices[torch.randint(len(available_indices), (1,)).item()]
                 neg_answer_emb = answer_embeddings[neg_idx]
 
+                neg_similarity = nn.functional.cosine_similarity(
+                    query_emb.unsqueeze(0), 
+                    neg_answer_emb.unsqueeze(0)
+                ).squeeze()
+
+                # neg_idx = (i + 1) if i < batch_size - 1 else (i - 1)
+                # neg_answer_emb = answer_embeddings[neg_idx]
+
                 # Calculate distances (using dot product similarity, convert to distance)
                 pos_distance = 1 - pos_similarity  # Convert similarity to distance
                 
                 # Calculate negative similarity (for single negative example)
-                neg_distance = 1 - torch.dot(query_emb, neg_answer_emb)
+                neg_distance = 1 - neg_similarity
                 # print(neg_idx, i)
                 # print(answer_embeddings[0], answer_embeddings[1], answer_embeddings[37])
                 loss = torch.max(zero, pos_distance - neg_distance + margin)
                 batch_loss += loss
             
-
             # Update progress bar
             batch_loss = batch_loss / batch_size
             
@@ -233,11 +246,14 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
 
     return model
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-train(dataloader, device, learning_rate=0.001, num_epochs=3, batch_size=batch_size)
-# device = "cpu"
-# model = TwoTowerModel(max_query_len, max_answer_len, 6, 6).to(device)
-# test_retrieval(model, "Results-Based Accountability® (also known as RBA) is a disciplined way of thinking", dataset, word_to_tensor, max_query_len, collate_fn, embedding_layer, 5)
+hidden_size_query = 10
+hidden_size_answer = 10
+device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+model = train(dataloader, device, learning_rate=0.01, num_epochs=3, batch_size=batch_size, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer)
+# device = torch.device("cpu")
+device = "cpu"
+model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer).to(device)
+test_retrieval(model, "checkpoints/checkpoint_epoch_2.pt", "What is the reserve bank of australia?", dataset, word_to_tensor, max_query_len, collate_fn, embedding_layer, 5)
 
 
 
