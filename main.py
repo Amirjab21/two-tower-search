@@ -11,8 +11,10 @@ from models import QueryTower, AnswerTower, TwoTowerModel
 # from two_tower_trainer import TwoTowerTrainer
 import wandb
 
+from testing import test_retrieval, save_checkpoint
 
-df = pd.read_parquet('data/qa_formatted.parquet').head(10000)
+
+df = pd.read_parquet('data/qa_formatted.parquet')
 
 
 # Load Google's pretrained Word2Vec model
@@ -80,23 +82,31 @@ print(max_query_len, max_answer_len)
 def collate_fn(batch):
     """Custom collate function to handle variable length sequences"""
     
-    # Pad sequences
-    padded_queries = torch.stack([
+    query_lengths = [item['query'].size(0) for item in batch]
+    answer_lengths = [item['answer'].size(0) for item in batch]
+    # First pad the indices
+    padded_query_indices = torch.stack([
         torch.nn.functional.pad(item['query'], (0, max_query_len - item['query'].size(0)))
         for item in batch
-    ]).float()
-    padded_answers = torch.stack([
+    ]).long()
+    padded_answer_indices = torch.stack([
         torch.nn.functional.pad(item['answer'], (0, max_answer_len - item['answer'].size(0)))
         for item in batch
-    ]).float()
+    ]).long()
+    
+    # Convert indices to embeddings using the embedding layer
+    padded_queries = embedding_layer(padded_query_indices)  # Shape: [batch_size, max_query_len, 300]
+    padded_answers = embedding_layer(padded_answer_indices)  # Shape: [batch_size, max_answer_len, 300]
     
     return {
         'query': padded_queries,
-        'answer': padded_answers
+        'answer': padded_answers,
+        'query_length': query_lengths,
+        'answer_length': answer_lengths
     }
 
 dataset = QADataset(query_answer_pairs, word2index)
-batch_size = 32
+batch_size = 512
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_size=batch_size,
@@ -129,15 +139,18 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
                 "num_epochs": num_epochs,
             },
         )
+    
+    hidden_size_query = 6
+    hidden_size_answer = 6
 
-    model = TwoTowerModel(max_query_len, max_answer_len).to(device)
+    model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query, hidden_size_answer).to(device)
     # criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # scheduler2 = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #     optimizer2, mode="min", factor=0.5, patience=1
     # )
-
+    zero = torch.tensor(0.0).to(device)
     for epoch in range(num_epochs):
         model.train()
         
@@ -149,13 +162,16 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
         for batch_idx, batch in enumerate(progress_bar):
            
             query, answer = batch['query'].to(device), batch['answer'].to(device)
+            query_length, answer_length = batch['query_length'], batch['answer_length']
             batch_size = query.shape[0]
 
             optimizer.zero_grad()
-
-            query_embeddings, answer_embeddings = model(query, answer)
-
-            total_loss = 0
+            # print(answer.shape, answer[0], answer[1], answer[37])
+            query_embeddings, answer_embeddings = model(query, answer, query_length, answer_length)
+            # print(answer_embeddings.shape, answer_embeddings[0], answer_embeddings[1], answer_embeddings[37])
+            batch_loss = torch.tensor(0.0).to(device)
+            
+            margin = 0.5  # Hyperparameter you can tune
             for i in range(batch_size):
                 # Positive pair
                 query_emb = query_embeddings[i]
@@ -164,26 +180,25 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
                 # Calculate positive similarity
                 pos_similarity = torch.dot(query_emb, pos_answer_emb)
                 
-                # Get negative examples (all other answers in batch)
-                negative_indices = [j for j in range(batch_size) if j != i]
-                neg_answer_embs = answer_embeddings[negative_indices]
+                # Randomly select 3 negative indices
+                available_indices = [j for j in range(batch_size) if j != i]
+                # Just select one random negative index
+                neg_idx = available_indices[torch.randint(len(available_indices), (1,)).item()]
+                neg_answer_emb = answer_embeddings[neg_idx]
+
+                # Calculate distances (using dot product similarity, convert to distance)
+                pos_distance = 1 - pos_similarity  # Convert similarity to distance
                 
-                # Calculate negative similarities
-                neg_similarities = torch.matmul(query_emb, neg_answer_embs.T)
-                
-                # Combine positive and negative similarities
-                all_similarities = torch.cat([pos_similarity.unsqueeze(0), neg_similarities])
-                
-                # Create label (positive example should have highest similarity)
-                label = torch.zeros(len(all_similarities), device=device)
-                label[0] = 1  # First position is the positive example
-                
-                # Calculate loss for this query
-                loss = nn.CrossEntropyLoss()(all_similarities.unsqueeze(0), label.unsqueeze(0).argmax(dim=1))
-                total_loss += loss
+                # Calculate negative similarity (for single negative example)
+                neg_distance = 1 - torch.dot(query_emb, neg_answer_emb)
+                # print(neg_idx, i)
+                # print(answer_embeddings[0], answer_embeddings[1], answer_embeddings[37])
+                loss = torch.max(zero, pos_distance - neg_distance + margin)
+                batch_loss += loss
+            
 
             # Update progress bar
-            batch_loss = total_loss / batch_size
+            batch_loss = batch_loss / batch_size
             
             # Update progress bar with current batch loss
             progress_bar.set_postfix({"loss": batch_loss.item()})
@@ -192,39 +207,37 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
+            total_loss += batch_loss.item() * batch_size  # Accumulate the total loss
+
             wandb.log({
                 "batch_loss": batch_loss.item(),
                 "epoch": epoch,
                 "batch": batch_idx
             })
 
-            # Log to WandB
 
         epoch_loss = total_loss / len(train_loader.dataset)  # Average loss over all samples
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}")
         
-        # Log epoch metrics to WandB
         wandb.log({
-            "epoch_loss": epoch_loss.item(),
+            "epoch_loss": epoch_loss,
             "epoch": epoch,
         })
-        # logging.info(f"Epoch {epoch + 1}/{self.num_epochs}, Loss: {avg_loss:.4f}")
-        # scheduler.step(avg_loss)
-
-        # Perform similarity check for 'dog' and other test words
-        # test_word = "love"
         
-        # similar_words = self.find_similar_words(model, test_word, n=10)
-        # print(similar_words)
 
         # Save checkpoint
-        # self.save_checkpoint(model, optimizer, epoch, avg_loss)
+        save_checkpoint(model, optimizer, epoch, epoch_loss)
+
+        # test_retrieval(model, "How do I improve my programming skills?", dataset, word_to_tensor, max_query_len, collate_fn, embedding_layer, 5)
+
 
     return model
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-train(dataloader, device, learning_rate=0.001, num_epochs=10, batch_size=batch_size)
-
+train(dataloader, device, learning_rate=0.001, num_epochs=3, batch_size=batch_size)
+# device = "cpu"
+# model = TwoTowerModel(max_query_len, max_answer_len, 6, 6).to(device)
+# test_retrieval(model, "Results-Based Accountability® (also known as RBA) is a disciplined way of thinking", dataset, word_to_tensor, max_query_len, collate_fn, embedding_layer, 5)
 
 
 

@@ -3,28 +3,61 @@ import torch.nn as nn
 
 
 class QueryTower(nn.Module):
-    def __init__(self, input_dim=12):  # Update input dimension to match your data
+    def __init__(self, input_dim=12, hidden_size=3):  # Update input dimension to match your data
         super(QueryTower, self).__init__()
-        self.fc = nn.Linear(input_dim, 3)  # First number should match your input dimension
-    def forward(self, x):
-        return self.fc(x)
+        self.rnn = nn.RNN(input_size=300, 
+                         hidden_size=hidden_size,
+                         num_layers=1,
+                         batch_first=True)
+    def forward(self, x, lengths=None):
+        if lengths is not None:
+            packed_x = nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
+            output, hidden = self.rnn(packed_x)
+        else:
+            output, hidden = self.rnn(x)
+        # print("Input shape:", x.shape)
+        # print("First sequence in batch:", x[0][:5])  # First 5 elements
+        # print("Last sequence in batch:", x[3][:5])  # First 5 elements
+        
+        # Remove the first dimension and print sample elements
+        embedding = hidden.squeeze(0)  # Remove dimension of size 1
+        # print("Query embedding shape:", embedding.shape)
+        # print("First query in batch:", embedding[0])
+        # print("Last query in batch:", embedding[-1])
+        return embedding
     
 class AnswerTower(nn.Module):
-    def __init__(self, input_dim=32):  # Update input dimension to match your data
+    def __init__(self, input_dim=32, hidden_size=3):  # Added hidden_size parameter
         super(AnswerTower, self).__init__()
-        self.fc = nn.Linear(input_dim, 3)  # First number should match your input dimension
-    def forward(self, x):
-        return self.fc(x)
+        self.rnn = nn.RNN(input_size=300,
+                         hidden_size=hidden_size,
+                         num_layers=1,
+                         batch_first=True)
+    
+    def forward(self, x, lengths=None):
+        if lengths is not None:
+            packed_x = nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
+            output, hidden = self.rnn(packed_x)
+        else:
+            output, hidden = self.rnn(x)
+        # print("Output shape:", output.shape)
+
+        # Remove the first dimension and print sample elements
+        embedding = hidden.squeeze(0)  # Remove dimension of size 1
+        # print("Answer embedding shape:", embedding.shape)
+        # print("First answer in batch:", embedding[0])
+        # print("Last answer in batch:", embedding[-1])
+        return embedding
     
 class TwoTowerModel(nn.Module):
-    def __init__(self, query_len, answer_len):
+    def __init__(self, query_len, answer_len, hidden_size_query, hidden_size_answer):
         super().__init__()
-        self.query_tower = QueryTower(input_dim=query_len)
-        self.answer_tower = AnswerTower(input_dim=answer_len)
+        self.query_tower = QueryTower(input_dim=query_len, hidden_size=hidden_size_query)
+        self.answer_tower = AnswerTower(input_dim=answer_len, hidden_size=hidden_size_answer)
     
-    def forward(self, query, answer):
-        query_embeddings = self.query_tower(query)
-        answer_embeddings = self.answer_tower(answer)
+    def forward(self, query, answer, query_lengths=None, answer_lengths=None):
+        query_embeddings = self.query_tower(query, query_lengths)
+        answer_embeddings = self.answer_tower(answer, answer_lengths)
         return query_embeddings, answer_embeddings
 
 
@@ -40,12 +73,16 @@ class QADataset(torch.utils.data.Dataset):
         query, answer = self.query_answer_pairs[idx]
 
         # Convert to tensors only when accessed
-        query_tensor = torch.cat([self.word_to_tensor(word) for word in query.split()])
-        answer_tensor = torch.cat([self.word_to_tensor(word) for word in answer.split()])
+        query_words = query.split()
+        query_tensor = torch.cat([self.word_to_tensor(word) for word in query_words])
+        answer_words = answer.split()
+        answer_tensor = torch.cat([self.word_to_tensor(word) for word in answer_words])
         
         return {
             'query': query_tensor,
-            'answer': answer_tensor
+            'answer': answer_tensor,
+            'query_length': len(query_words),
+            'answer_length': len(answer_words)
         }
 
     def word_to_tensor(self, word):
