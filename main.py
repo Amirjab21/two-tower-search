@@ -97,7 +97,7 @@ def collate_fn(batch):
     # Convert indices to embeddings using the embedding layer
     padded_queries = embedding_layer(padded_query_indices)  # Shape: [batch_size, max_query_len, 300]
     padded_answers = embedding_layer(padded_answer_indices)  # Shape: [batch_size, max_answer_len, 300]
-
+    
     return {
         'query': padded_queries,
         'answer': padded_answers,
@@ -142,7 +142,7 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
             },
         )
     
-
+    
 
     model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query, hidden_size_answer).to(device)
     # criterion = nn.NLLLoss()
@@ -172,7 +172,7 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
             # print(answer_embeddings.shape, answer_embeddings[0], answer_embeddings[1], answer_embeddings[37])
             batch_loss = torch.tensor(0.0).to(device)
             
-            margin = 0.1  # Hyperparameter you can tune
+            margin = 0.05  # Hyperparameter you can tune
             for i in range(batch_size):
                 # Positive pair
                 query_emb = query_embeddings[i]
@@ -246,13 +246,13 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
 
     return model
 
-hidden_size_query = 10
-hidden_size_answer = 10
+hidden_size_query = 50
+hidden_size_answer = 50
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-model = train(dataloader, device, learning_rate=0.01, num_epochs=3, batch_size=batch_size, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer)
+model = train(dataloader, device, learning_rate=0.02, num_epochs=5, batch_size=batch_size, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer)
 # device = torch.device("cpu")
 device = "cpu"
-model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer).to(device)
+model = TwoTowerModel(max_query_len, max_answer_len, hidden_size_query, hidden_size_answer).to(device)
 test_retrieval(model, "checkpoints/checkpoint_epoch_2.pt", "What is the reserve bank of australia?", dataset, word_to_tensor, max_query_len, collate_fn, embedding_layer, 5)
 
 
