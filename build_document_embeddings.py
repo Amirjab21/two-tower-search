@@ -11,6 +11,14 @@ import json
 import wandb
 from pathlib import Path
 #We need to process all the data and then save the embeddings to faiss
+# IMPORTANT, you must add answer to the Dataset class for this to work:
+        # return {
+        #     'query': query_tensor,
+        #     'answer': answer_tensor,
+        #     'query_length': len(query_words),
+        #     'answer_length': len(answer_words),
+        #     "original_answer": answer
+        # }
 
 df_val = pd.read_parquet("data/qa_formatted_validation.parquet")
 df = pd.read_parquet("data/qa_formatted.parquet")
