@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "8000:8000"
+    container_name: fastapi-backend-prod
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "80:80"
+    container_name: react-frontend-prod
+    restart: unless-stopped
+    depends_on:
+      - backend 

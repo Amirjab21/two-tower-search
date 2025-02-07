@@ -1,0 +1,42 @@
+FROM python:3.9-slim-bullseye as builder
+
+WORKDIR /app
+
+# Install build dependencies and create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# First install PyTorch CPU version explicitly
+RUN pip3 install --no-cache-dir --default-timeout=100 torch --index-url https://download.pytorch.org/whl/cpu && \
+    python3 -c "import torch; print('PyTorch version:', torch.__version__)"
+
+# Then install other dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Clean up unnecessary files
+RUN find /opt/venv -type d -name "tests" -exec rm -rf {} + && \
+    find /opt/venv -type d -name "test" -exec rm -rf {} + && \
+    find /opt/venv -type f -name "*.pyc" -delete && \
+    find /opt/venv -type f -name "*.pyo" -delete && \
+    find /opt/venv -type d -name "__pycache__" -exec rm -rf {} +
+
+# Final stage
+FROM python:3.9-slim-bullseye
+
+WORKDIR /app
+
+# Copy only the virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Verify PyTorch installation in final image
+RUN python3 -c "import torch; print('PyTorch version:', torch.__version__)"
+
+# Copy only necessary application files
+COPY main.py models.py Tokenizer.py Stemmer.py ./
+COPY models/weights.pt models/
+COPY data_outputs/vocab.json data_outputs/
+
+# Run in production mode
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--proxy-headers"] 
