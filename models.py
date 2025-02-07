@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import numpy as np
 
 class QueryTower(nn.Module):
     def __init__(self, input_dim=12, hidden_size=3):  # Update input dimension to match your data
@@ -71,7 +71,6 @@ class QADataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         query, answer = self.query_answer_pairs[idx]
-
         # Convert to tensors only when accessed
         query_words = query.split()
         query_tensor = torch.cat([self.word_to_tensor(word) for word in query_words])
@@ -82,7 +81,8 @@ class QADataset(torch.utils.data.Dataset):
             'query': query_tensor,
             'answer': answer_tensor,
             'query_length': len(query_words),
-            'answer_length': len(answer_words)
+            'answer_length': len(answer_words),
+            "original_answer": answer
         }
 
     def word_to_tensor(self, word):

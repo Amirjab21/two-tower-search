@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from models import QADataset, TwoTowerModel
 import wandb
+import gensim.downloader as api
 
 
 def save_checkpoint(model, optimizer, epoch, val_loss):
@@ -37,14 +38,15 @@ df_val = pd.read_parquet('data/qa_formatted_validation.parquet').head(1024)
 
 # Load Google's pretrained Word2Vec model
 model_path = "data/GoogleNews-vectors-negative300.bin"
-word2vec = KeyedVectors.load_word2vec_format(model_path, binary=True)
+# word2vec = KeyedVectors.load_word2vec_format(model_path, binary=True)
+word2vec = api.load('word2vec-google-news-300')
 # Get the vocabulary and embeddings
 vocab_size = len(word2vec)
 embedding_dim = word2vec.vector_size
 weights = torch.tensor(word2vec.vectors, dtype=torch.float32)
 
 # Create a PyTorch Embedding layer
-embedding_layer = nn.Embedding.from_pretrained(weights, freeze=False)  # Set freeze=True if you don't want to fine-tune
+embedding_layer = nn.Embedding.from_pretrained(weights, freeze=True)  # Set freeze=True if you don't want to fine-tune
 
 word2index = {word: i for i, word in enumerate(word2vec.index_to_key)}
 
@@ -83,7 +85,7 @@ def evaluate_model(model, df_val, max_query_len, max_answer_len, collate_fn, num
         for _, row in group.iterrows():
             query_answer_pairs_val.append((query, row['answer']))
     dataset = QADataset(query_answer_pairs_val, word2index)
-    val_loader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn)
+    val_loader = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=True, collate_fn=collate_fn)
 
     
     with torch.no_grad():
@@ -116,7 +118,7 @@ def evaluate_model(model, df_val, max_query_len, max_answer_len, collate_fn, num
                 
     return batch_loss.item()
 
-max_query_len = max(len(query.split()) for _, query in query_answer_pairs)
+max_query_len = max(len(query.split()) for query, _ in query_answer_pairs)
 max_answer_len = max(len(answer.split()) for _, answer in query_answer_pairs)
 
 def collate_fn(batch):
@@ -153,12 +155,13 @@ def collate_fn(batch):
     }
 
 dataset = QADataset(query_answer_pairs, word2index)
-batch_size = 512
+batch_size = 2048
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_size=batch_size,
     shuffle=True,
-    collate_fn=collate_fn
+    collate_fn=collate_fn,
+    num_workers=4
 )
 
 
@@ -238,9 +241,8 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
                 })
 
         val_loss = evaluate_model(model, df_val, max_query_len, max_answer_len,collate_fn, 1024, margin)
-        scheduler.step(val_loss)
-        print(val_loss, "val_loss")
         epoch_loss = total_loss / len(train_loader.dataset)  # Average loss over all samples
+        scheduler.step(val_loss)
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}")
         
         if wandb_yes:
@@ -258,10 +260,10 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
 
 
 
-hidden_size_query = 125
-hidden_size_answer = 125
+hidden_size_query = 250
+hidden_size_answer = 250
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-model = train(dataloader, device, learning_rate=0.001, num_epochs=7, batch_size=batch_size, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer, wandb_yes=True)
+model = train(dataloader, device, learning_rate=0.001, num_epochs=8, batch_size=batch_size, hidden_size_query=hidden_size_query, hidden_size_answer=hidden_size_answer, wandb_yes=True)
 
 
 
