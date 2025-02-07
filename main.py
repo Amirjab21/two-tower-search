@@ -30,8 +30,8 @@ def save_checkpoint(model, optimizer, epoch, val_loss):
 
 
 
-df = pd.read_parquet('data/selected_only.parquet')
-df_val = pd.read_parquet('data/qa_formatted_validation.parquet').head(1024)
+df = pd.read_parquet('data/qa_formatted.parquet')
+df_val = pd.read_parquet('data/qa_formatted_validation.parquet').head(4000)
 
 
 
@@ -155,13 +155,13 @@ def collate_fn(batch):
     }
 
 dataset = QADataset(query_answer_pairs, word2index)
-batch_size = 2048
+batch_size = 3000
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_size=batch_size,
     shuffle=True,
     collate_fn=collate_fn,
-    num_workers=4
+    num_workers=8
 )
 
 
@@ -220,7 +220,7 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
             positive_distances = 1 - positive_similarities
             negative_distances = 1 - negative_similarities
             
-            # Mask out diagonal (positive pairs) from negative distances
+            
             batch_loss = torch.mean(
                 torch.clamp(positive_distances - negative_distances + margin, min=0.0)
             )
