@@ -127,16 +127,17 @@ def save_embeddings(device, answer_model, embedding_dimension_output, batch_size
     embeddings_numpy = np.concatenate(embeddings_list, axis=0)
     index = faiss.IndexFlatL2(embedding_dimension_output)
     index.add(embeddings_numpy)
-    faiss.write_index(index, "data/answer_embeddings.faiss")
-    with open("data/answer_embeddings.json", "w") as f:
+    faiss.write_index(index, "data/answer_embeddings2.faiss")
+    with open("data/answer_embeddings2.json", "w") as f:
         json.dump(document_to_embedding_id, f)
 
 device = torch.device("cpu" if torch.backends.mps.is_available() else "cpu")
-model = TwoTowerModel(query_len=max_query_len, answer_len=max_answer_len, hidden_size_query=125, hidden_size_answer=125)
+model = TwoTowerModel(query_len=max_query_len, answer_len=max_answer_len, hidden_size_query=250, hidden_size_answer=250)
 model.train()
-model.load_state_dict(torch.load("checkpoints/checkpoint_epoch_6.pt")['model_state_dict'])
+load_checkpoint = torch.load("checkpoints/final_super_alldata.pt", map_location=torch.device('cpu'))
+model.load_state_dict(load_checkpoint['model_state_dict'])
 answer_model = model.answer_tower
-save_embeddings(device, answer_model, embedding_dimension_output=125, batch_size=batch_size)
+save_embeddings(device, answer_model, embedding_dimension_output=250, batch_size=batch_size)
 
 model.eval()
 document_text = "Install ceramic tile floor to match shower-Average prices for installation are between $11 to $22 per square foot; 2  A light/fan combination-Averages at $180 and one hour of installation; 3  Insulate and re-finish ceilings and walls-Fiberglass wall insulation with R-30 value will cost $2.25 per square foo"
@@ -160,7 +161,7 @@ def preprocess_answer(answer, answer_model):
 
 answer_embeddings = preprocess_answer(document_text, answer_model).unsqueeze(0)
 # print(answer_embeddings.shape, answer_embeddings)
-index = faiss.read_index("data/answer_embeddings.faiss")
+index = faiss.read_index("data/answer_embeddings2.faiss")
 
 
 # data_directory = Path("data")
@@ -171,7 +172,7 @@ distances, indices = index.search(answer_embeddings.cpu().detach().numpy(), 4)
 for i in range(4):
     print(indices[0][i])
 
-with open("data/answer_embeddings.json", "r") as f:
+with open("data/answer_embeddings2.json", "r") as f:
     document_mapping = json.load(f)
 
 # Print the corresponding answers for each index

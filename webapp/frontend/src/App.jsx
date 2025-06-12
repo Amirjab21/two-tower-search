@@ -2,15 +2,12 @@ import { useState } from 'react'
 import './App.css'
 
 // API URL based on environment
-const API_URL = import.meta.env.PROD 
-  ? '/api' // Production: Use nginx proxy
-  : 'http://localhost:8000' // Development: Direct connection
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
   const [text, setText] = useState('')
   const [results, setResults] = useState(null)
   const [error, setError] = useState(null)
-  const [documents, setDocuments] = useState(null)
   const handleSubmit = async () => {
     try {
       const res = await fetch(`${API_URL}/submit`, {
@@ -36,14 +33,20 @@ function App() {
       setResults(null)
     }
   }
-  console.log(results, "results")
   return (
     <div className="container">
-      <img 
-        src="/paint.png" 
-        alt="Paint Logo" 
-        style={{ width: '100%' }}
-      />
+      <div className="header-section">
+        <h1 className="main-title">Semantic Search</h1>
+        <p className="description">
+          This is a two-tower neural network architecture with Google&apos;s word2vec embeddings used for the words. 
+          The embeddings are passed through an RNN and the embeddings used are the final hidden layer of this RNN. 
+          The dataset used was MSMarco&apos;s v1 (100k records) and the embeddings are saved with Faiss.
+        </p>
+        <div className="links-container" style={{display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '10px'}}>
+          <a href="https://github.com/Amirjab21/two-tower-search" target="_blank" rel="noopener noreferrer" className="link">code</a>
+          <a href="https://huggingface.co/datasets/microsoft/ms_marco" target="_blank" rel="noopener noreferrer" className="link">dataset</a>
+        </div>
+      </div>
       <div className="input-container">
 
         <input
@@ -64,8 +67,8 @@ function App() {
         <div className="results-container">
           <ul className="similar-words">
             {results.map(({distance, document}, idx) => (
-              <li style={{color: "black"}} key={idx + document}>
-                {document} <span className="similarity">({distance} distance)</span>
+              <li style={{color: "black", gap: 18}} key={idx + document}>
+                {document} <span className="similarity">({Math.round(distance)} distance)</span>
               </li>
             ))}
           </ul>

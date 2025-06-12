@@ -161,7 +161,7 @@ dataloader = torch.utils.data.DataLoader(
     batch_size=batch_size,
     shuffle=True,
     collate_fn=collate_fn,
-    num_workers=8
+    num_workers= 8 if torch.cuda.is_available() else 0
 )
 
 
@@ -203,7 +203,7 @@ def train(train_loader: torch.utils.data.DataLoader, device, learning_rate, num_
 
             optimizer.zero_grad()
             query_embeddings, answer_embeddings = model(query, answer, query_length, answer_length)
-            
+            print(query_embeddings.shape, answer_embeddings.shape)
 
             positive_similarities = nn.functional.cosine_similarity(
                 query_embeddings,  

@@ -4,6 +4,24 @@ import torch.nn as nn
 from models import TwoTowerModel, QADataset
 from pathlib import Path
 import wandb
+from gensim.models import KeyedVectors
+
+CHECKPOINT_PATH = "checkpoints/final_weights.pt"
+
+def turn_text_to_tokens(text):
+    query_tokens = [word_to_tensor(word) for word in text.split()]
+    # Create a tensor of indices first
+    query_indices = torch.zeros(max_query_len, dtype=torch.long)
+    query_indices = query_indices.to(device)
+    for i, token in enumerate(query_tokens[:max_query_len]):
+        query_indices[i] = token
+    
+    # Convert indices to embeddings using the embedding layer
+    query_tensor = embedding_layer(query_indices).to(device).unsqueeze(0)  # Shape: [max_query_len, 300]
+    query_length = torch.tensor([len(query_tokens)], dtype=torch.int64, device='cpu')
+
+    return query_tensor, query_length
+
 def test_retrieval(model, checkpoint_path, query, dataset, word_to_tensor, max_query_len, max_answer_len, collate_fn,embedding_layer, k, answers):
     """
     Test the model's retrieval capabilities
@@ -74,61 +92,6 @@ def test_retrieval(model, checkpoint_path, query, dataset, word_to_tensor, max_q
             print(f"\n{i}. Answer: {result['answer']}")
             print(f"   Cosine Similarity Score: {result['similarity_score']:.4f}")
         
-        # all_answers = []
-        # all_answer_embeddings = []
-        
-        # # Process answers in batches to avoid memory issues
-        # batch_size = 10
-        # dataloader = torch.utils.data.DataLoader(
-        #     dataset, 
-        #     batch_size=batch_size,
-        #     shuffle=False,
-        #     collate_fn=collate_fn
-        # )
-        
-        # for batch in dataloader:
-        #     # Tokenize and pad answers
-        #     raw_answers = batch['answer']
-        #     padded_answers = torch.zeros((len(raw_answers), max_answer_len), dtype=torch.long, device=device)
-            
-        #     for i, answer in enumerate(raw_answers):
-        #         answer_tokens = [word_to_tensor(word) for word in answer.split()]
-        #         for j, token in enumerate(answer_tokens[:max_answer_len]):
-        #             padded_answers[i][j] = token
-            
-        #     # Convert indices to embeddings
-        #     answer_embeddings = embedding_layer(padded_answers)  # Shape: [batch_size, max_answer_len, embedding_dim]
-        #     answer_embeddings = model.answer_tower(answer_embeddings)
-            
-        #     print(f"Single batch answer_embeddings shape: {answer_embeddings.shape}")
-        #     all_answer_embeddings.append(answer_embeddings)
-        #     all_answers.extend([dataset.query_answer_pairs[i][1] for i in range(len(raw_answers))])
-        #     print(f"Current length of all_answers list: {len(all_answers)}")
-        
-        # Concatenate all answer embeddings
-        # all_answer_embeddings = torch.cat(all_answer_embeddings, dim=0)
-        # print(f"Final all_answer_embeddings shape: {all_answer_embeddings.shape}")
-        # print(f"Final length of all_answers list: {len(all_answers)}")
-        
-        # Calculate similarities
-        # similarities = torch.matmul(query_embedding, all_answer_embeddings.T)
-        # print(f"Similarities shape: {similarities.shape}")
-        # print(f"Similarities: {similarities[0]}")
-        # Get top k results
-        # top_k_similarities, top_k_indices = torch.topk(similarities, k=10)
-        
-        # results = []
-        # for sim, idx in zip(top_k_similarities, top_k_indices):
-        #     results.append({
-        #         'answer': all_answers[idx],
-        #         'similarity_score': sim.item()
-        #     })
-        
-        # print("\nTop 5 Retrieved Answers:")
-        # for i, result in enumerate(results, 1):
-        #     print(f"\n{i}. Answer: {result['answer']}")
-        #     print(f"   Similarity Score: {result['similarity_score']:.4f}")
-        # model.train()
         return results
 
 
@@ -242,7 +205,7 @@ def new_test_retrieval(model, checkpoint_path, query, dataset, word_to_tensor, m
             print(f"\n{i}. Answer: {result['answer']}")
             print(f"   Cosine Similarity Score: {result['similarity_score']:.4f}")
 
-from gensim.models import KeyedVectors
+
 
 model_path = "data/GoogleNews-vectors-negative300.bin"
 word2vec = KeyedVectors.load_word2vec_format(model_path, binary=True)
@@ -268,12 +231,13 @@ def sentence_to_tensor(sentence):
     return [word_to_tensor(word) for word in sentence.split()]
 
 answer_max_len = 201
-hidden_size_answer = 125
-hidden_size_query = 125
+hidden_size_answer = 250
+hidden_size_query = 250
 max_query_len = 26
 device = "cpu"
 model = TwoTowerModel(max_query_len, answer_max_len, hidden_size_query, hidden_size_answer).to(device)
-model.load_state_dict(torch.load("checkpoints/checkpoint_epoch_6.pt")['model_state_dict'])
+load_checkpoint = torch.load(CHECKPOINT_PATH, map_location=torch.device('cpu'))
+model.load_state_dict(load_checkpoint['model_state_dict'])
 query = "What is RBA?"
 query_tokens = [word_to_tensor(word) for word in query.split()]
 query_answer_pairs = [(
@@ -368,7 +332,7 @@ def do_average_pooling_over_documents(document1, document2):
 
 def run_full_test(query, answers=answers):
     query_embedding = get_query_embedding(query, max_query_len)
-    print(query_embedding)
+    # print(query_embedding)
     similarities = []
     
     # Compute similarities and store with answers
@@ -379,30 +343,19 @@ def run_full_test(query, answers=answers):
         similarities.append((answer, similarity))
     
     # Sort by similarity score in descending order
-    similarities.sort(key=lambda x: x[1], reverse=True)
+    similarities.sort(key=lambda x: x[1], reverse=False)
     
     # Print results
     print(f"\nResults for query: '{query}'\n")
     for answer, similarity in similarities:
         print(f"Similarity: {similarity:.4f}")
-        print(f"Answer: {answer[:30]}")
+        print(f"Answer: {answer[:3]}")
         print("-" * 80 + "\n")
     
     return similarities
 
-run_full_test("do i pay taxes on railroad retirement in alabama")
+# run_full_test("do i pay taxes on railroad retirement in alabama")
+run_full_test("are sessile polyps cancerous")
+run_full_test("what is the unit of measurement for brightness")
 
-# print(get_cosine_similarity(document1, document1))
-# print(get_cosine_similarity(document1, document2))
-# print(get_cosine_similarity(document1, document3))
-# print(do_average_pooling_over_documents("which city is seychelles", "where is Germany?"))
-# print(do_average_pooling_over_documents("which city is seychelles", "how much is banana?"))
-# query1 = "which city is seychelles"
-# query2 = "where is Germany?"
-# query3 = "how much is banana?"
-# print(get_cosine_similarity(get_query_embedding(query1), get_query_embedding(query2)))
-# print(get_cosine_similarity(get_query_embedding(query1), get_query_embedding(query3)))
-# query_max_len = 26
-# answer_max_len = 201
-# new_test_retrieval(model, "checkpoints/checkpoint_epoch_4.pt", "description of aerobic metabolism", dataset, word_to_tensor, max_query_len,answer_max_len, embedding_layer, 10, answers)
-# dataset, word_to_tensor, max_query_len,max_answer_len, collate_fn, embedding_layer, 10, answers)
+
