@@ -21,6 +21,12 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origin
+        allow_origins=[
+        "http://frontend:3001",  # Docker service name
+        "http://localhost:3001", # For local development
+        "http://localhost:3000", # Vite dev server default
+        "http://localhost:8000", # For direct backend testing
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

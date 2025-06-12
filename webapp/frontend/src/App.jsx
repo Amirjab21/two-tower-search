@@ -2,7 +2,9 @@ import { useState } from 'react'
 import './App.css'
 
 // API URL based on environment
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_URL = import.meta.env.PROD 
+  ? '/api' // Production: Use nginx proxy
+  : 'http://localhost:8000' // Development: Direct connection
 
 function App() {
   const [text, setText] = useState('')

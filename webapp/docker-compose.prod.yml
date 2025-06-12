@@ -5,8 +5,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    ports:
-      - "8090:8000"
+    # No ports section - backend is internal only
     container_name: fastapi-backend-prod
     restart: unless-stopped
     environment:
@@ -17,13 +16,11 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.prod
+      dockerfile: Dockerfile.dev
     ports:
-      - "3001:3001"
+      - "3001:3001" # Only frontend exposed
     container_name: react-frontend-prod
     restart: unless-stopped
-    environment:
-      - VITE_API_URL=http://65.109.135.235:8090 # Replace with your actual server IP
     depends_on:
       - backend
     networks:
