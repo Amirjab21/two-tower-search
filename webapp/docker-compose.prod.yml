@@ -5,7 +5,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    # No ports section - backend is internal only
+    ports:
+      - "8090:8090" # Add this back to expose backend
     container_name: fastapi-backend-prod
     restart: unless-stopped
     environment:
@@ -18,7 +19,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
     ports:
-      - "3001:3001" # Only frontend exposed
+      - "3001:3001"
     container_name: react-frontend-prod
     restart: unless-stopped
     depends_on:
