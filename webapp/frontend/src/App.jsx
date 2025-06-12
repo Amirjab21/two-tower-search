@@ -2,9 +2,8 @@ import { useState } from 'react'
 import './App.css'
 
 // API URL based on environment
-const API_URL = import.meta.env.PROD 
-  ? '/api' // Production: Use nginx proxy
-  : 'http://localhost:8000' // Development: Direct connection
+const API_URL = 'http://65.109.135.235:8090' // Production: Use nginx proxy
+  // : 'http://localhost:8000' // Development: Direct connection
 
 function App() {
   const [text, setText] = useState('')
