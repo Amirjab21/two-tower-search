@@ -2,6 +2,11 @@ version: "3.8"
 
 services:
   backend:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -11,6 +16,8 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8090 || exit 1"]
     networks:
       - semantic-search-network
 
