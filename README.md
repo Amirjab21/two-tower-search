@@ -1,51 +1,62 @@
-# Two Tower Model Docker Setup
+# Two Tower Search
 
-This repository contains a Docker setup for running the Two Tower Model training script.
+This project contains the code used to train and serve a two‑tower retrieval model.  
+The model embeds questions and answers separately and uses cosine similarity to match
+user queries with relevant answers.  The repository also provides a small web
+application for interactive search.
 
-## Prerequisites
+## Repository structure
 
-1. Docker installed on your system
-2. The following data files:
-   - `GoogleNews-vectors-negative300.bin`
-   - `qa_formatted.parquet`
-
-## Setup Instructions
-
-1. Place the required data files in the `data/` directory:
-```bash
-data/
-├── GoogleNews-vectors-negative300.bin
-└── qa_formatted.parquet
+```
+.
+├── build_document_embeddings.py  # create FAISS index of answer embeddings
+├── main.py                       # training script (CPU)
+├── main_gpu.py                   # training script with GPU support
+├── models.py                     # query tower, answer tower and dataset classes
+├── webapp/                       # backend (FastAPI) and frontend (React)
+├── checkpoints/                  # saved model weights
+├── requirements.txt              # Python dependencies
+└── ...
 ```
 
-2. Build the Docker image:
-```bash
-docker build -t two-tower-model .
-```
+## Model architecture
 
-3. Run the container:
-```bash
-docker run --gpus all -v $(pwd)/data:/app/data two-tower-model
-```
+Both the query and answer towers are implemented as GRU encoders.  Each tower
+receives a sequence of Word2Vec embeddings and projects the final hidden state
+through a small feed‑forward layer to create fixed‑length representations.
+During training we maximise the similarity between matching query/answer pairs
+while pushing apart mismatched pairs using a margin‑based loss.
 
-Note: If you don't have a GPU, remove the `--gpus all` flag:
-```bash
-docker run -v $(pwd)/data:/app/data two-tower-model
-```
+## Training
 
-## Data Files
+1. Download the following data files and place them under `data/`:
+   - `GoogleNews-vectors-negative300.bin` &ndash; pre‑trained Word2Vec weights
+   - `qa_formatted.parquet` &ndash; training set of query/answer pairs
 
-- `GoogleNews-vectors-negative300.bin`: Pre-trained Word2Vec embeddings from Google News
-- `qa_formatted.parquet`: Question-Answer dataset in Parquet format
+2. Install the dependencies (or build the Docker image provided):
+   ```bash
+   docker build -t two-tower-model .
+   ```
 
-## Environment Variables
+3. Start training:
+   ```bash
+   docker run --gpus all -v $(pwd)/data:/app/data two-tower-model
+   ```
+   If you do not have a GPU remove the `--gpus all` flag.
 
-You can customize the training by setting the following environment variables when running the container:
+The scripts `main.py` and `main_gpu.py` can also be run directly if the
+requirements are installed locally.  Training parameters such as learning rate
+and batch size can be modified via environment variables when using Docker.
 
-```bash
-docker run -v $(pwd)/data:/app/data \
-  -e LEARNING_RATE=0.01 \
-  -e NUM_EPOCHS=3 \
-  -e BATCH_SIZE=512 \
-  two-tower-model
-``` 
+## Building document embeddings
+
+After training, run `build_document_embeddings.py` to compute answer embeddings
+and store them in a FAISS index.  These embeddings are used for fast retrieval
+during inference.
+
+## Web application
+
+The `webapp` directory contains a FastAPI backend and a React frontend.  Use
+`docker-compose up --build` from within `webapp/` to start the development
+server.  The application exposes a simple interface for querying the trained
+model and inspecting the retrieved answers.
